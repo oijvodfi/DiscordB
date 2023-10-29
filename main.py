@@ -58,7 +58,7 @@ class CreateTaskButton(discord.ui.Button):
 
         await interaction.followup.send(
             'Хотите ли вы назначить эту задачу'
-            'определенному пользователю? (y/n)')
+            ' определенному пользователю? (y/n)')
         message = await bot.wait_for('message', check=check)
         if message.content.lower() == 'y':
             await interaction.followup.send('Введите имя пользователя.')
@@ -74,8 +74,8 @@ class CreateTaskButton(discord.ui.Button):
             user_tag = ''.join(e if e.isalnum() else '_' for e in user_name)
             subprocess.run(["task", "add", task_description, f"+{user_tag}"])
             await interaction.followup.send(
-                f'Задача "{task_description}" создана и назначена пользователю'
-                '{user_name}.')
+                f'Задача "{task_description}" '
+                'создана и назначена пользователю{user_name}.')
         else:
             subprocess.run(["task", "add", task_description])
             await interaction.followup.send(
@@ -112,7 +112,7 @@ class DoneTaskButton(discord.ui.Button):
                     'Проверьте ID задачи.')
 
         await interaction.followup.send(
-            f'Задачи {", ".join(task_ids)} завершены.')
+            f'Задача {", ".join(task_ids)} завершена.')
 
 # УДАЛЕНИЕ ЗАДАЧ
 
@@ -212,17 +212,20 @@ class CompletedTasksButton(discord.ui.Button):
                          style=discord.ButtonStyle.primary)
 
     async def callback(self, interaction: discord.Interaction):
-        # Проверка на админа
-        if interaction.user.guild_permissions.administrator:
+        try:
             completed_tasks = subprocess.check_output(
-                ["task", "completed"])
+                ["task", "completed"], stderr=subprocess.STDOUT)
             completed_tasks = completed_tasks.decode('utf-8')
-            completed_tasks = f'```\n{completed_tasks}\n```'
+            if completed_tasks.strip() == '':
+                await interaction.response.send_message(
+                    'У вас нет выполненных задач.')
+            else:
+                completed_tasks = f'```\n{completed_tasks}\n```'
+                await interaction.response.send_message(
+                    f'Ваши выполненные задачи: {completed_tasks}')
+        except subprocess.CalledProcessError:
             await interaction.response.send_message(
-                f'Вот ваши выполненные задачи: {completed_tasks}')
-        else:
-            await interaction.response.send_message(
-                'Извините, но эта команда доступна только администраторам.')
+                'Произошла ошибка при получении списка выполненных задач.')
 
 # Добавить проект
 
@@ -300,7 +303,7 @@ class FilterByProjectButton(discord.ui.Button):
                 and m.channel.id == interaction.channel.id
             )
         message = await bot.wait_for('message', check=check)
-        project_name = message.content.strip().lower()
+        project_name = message.content.strip()
 
         try:
             task_list = subprocess.check_output(
@@ -311,7 +314,8 @@ class FilterByProjectButton(discord.ui.Button):
             await interaction.followup.send(
                 f'Задачи в проекте {project_name}: \n{task_list}')
         except subprocess.CalledProcessError:
-            await interaction.followup.send('Нет задач в этом проекте.')
+            await interaction.followup.send(
+                'Нет задач в этом проекте.')
 
 # Фильтр по тегу
 
@@ -339,7 +343,7 @@ class FilterByTagButton(discord.ui.Button):
                 and m.channel.id == interaction.channel.id
             )
         message = await bot.wait_for('message', check=check)
-        tag = message.content.strip().lower()
+        tag = message.content.strip()
 
         try:
             task_list = subprocess.check_output(

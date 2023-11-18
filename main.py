@@ -19,9 +19,15 @@ intents.messages = True
 
 bot = commands.Bot(command_prefix=PREFIX, intents=intents)
 
+with open('config.json') as f:
+    config = json.load(f)
+
+users = config['users']
+projects = config['projects']
+
 @bot.event
 async def on_ready():
-    print("DiscoBot started | Taags?!")
+    print("DiscoBot started | Looking tassty")
 
 # ГЛАВНОЕ МЕНЮ
 
@@ -30,21 +36,29 @@ class MainView(discord.ui.View):
     def __init__(self):
         super().__init__()
 
+    @discord.ui.button(label='Working', style=discord.ButtonStyle.green)
+    async def working_menu_button(self,
+                          interaction: discord.Interaction,
+                          button: discord.ui.button):
+        await interaction.response.edit_message(
+            content="Выберите действие",
+            view=WorkingView())
+        
     @discord.ui.button(label='Basic', style=discord.ButtonStyle.green)
-    async def main_menu_button(self,
+    async def basic_menu_button(self,
                           interaction: discord.Interaction,
                           button: discord.ui.button):
         await interaction.response.edit_message(
             content="Выберите действие",
             view=BasicView())
         
-    @discord.ui.button(label='TagManager', style=discord.ButtonStyle.green)
+    @discord.ui.button(label='Tag-manager', style=discord.ButtonStyle.green)
     async def tag_management_menu_button(self,
                           interaction: discord.Interaction,
                           button: discord.ui.button):
         await interaction.response.edit_message(
             content="Выберите действие",
-            view=TagManagerView())
+            view=TagManagementView())
         
 # КНОПКИ ПОДТВЕРЖДЕНИЯ (Да/Нет)
 
@@ -93,10 +107,6 @@ class CreateTaskButton(discord.ui.Button):
         await view.wait()
 
         if view.value:
-            users = [
-                {'name': 'gasanoff', 'id': 'id1'},
-                {'name': 'sm1lebroofficial', 'id': 'id3'},
-            ]
             await interaction.followup.send("Выберите пользователя, которому хотите назначить задачу", view=SelectUserView(users, self))
         else:
             subprocess.run(["task", "add", self.task_description])
@@ -113,17 +123,17 @@ class UserSelect(discord.ui.Select):
         self.button = button
 
     async def callback(self, interaction: discord.Interaction):
-        user_id = self.values[0]  # Получаем выбранное значение
+        user_id = self.values[0]
         # Находим пользователя по его ID
-        user_name = next((option.label for option in self.options if option.value == user_id), None)
-        if user_name is None:
+        user = next((user for user in users if user['id'] == user_id), None)
+        if user is None:
             await interaction.response.send_message('Пользователь не найден.')
             return
         # Замена всех спец. символов и пробелов на подчеркивания
-        user_tag = ''.join(e if e.isalnum() else '_' for e in user_name)
+        user_tag = ''.join(e if e.isalnum() else '_' for e in user['tag'])
         subprocess.run(["task", "add", self.button.task_description, f"+{user_tag}"])
         await interaction.response.send_message(
-            f'Задача "{self.button.task_description}" создана и назначена пользователю {user_name}.')
+            f'Задача "{self.button.task_description}" создана и назначена пользователю {user["name"]}.')
 
 class SelectUserView(discord.ui.View):
     def __init__(self, users, button):
@@ -136,7 +146,8 @@ class SelectUserView(discord.ui.View):
 class DoneTaskButton(discord.ui.Button):
     def __init__(self):
         super().__init__(label='Завершить задачу',
-                         row=0, custom_id='done_task',
+                         row=1,
+                         custom_id='done_task',
                          style=discord.ButtonStyle.success)
 
     async def callback(self, interaction: discord.Interaction):
@@ -169,7 +180,7 @@ class DoneTaskButton(discord.ui.Button):
 class DeleteTasksButton(discord.ui.Button):
     def __init__(self):
         super().__init__(label='Удаление задач',
-                         row=0, custom_id='delete_task',
+                         row=2, custom_id='delete_task',
                          style=discord.ButtonStyle.danger
                          )
 
@@ -204,10 +215,10 @@ class DeleteTasksButton(discord.ui.Button):
 
 class ListTasksButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(label='Список всех задач',
+        super().__init__(label='Все задачи проекта',
                          row=1,
                          custom_id='list_tasks',
-                         style=discord.ButtonStyle.primary)
+                         style=discord.ButtonStyle.secondary)
 
     async def callback(self, interaction: discord.Interaction):
         # Проверка на админа
@@ -231,13 +242,12 @@ class ListTasksButton(discord.ui.Button):
 class MyTasksButton(discord.ui.Button):
     def __init__(self):
         super().__init__(label='Мои задачи',
-                         row=1,
+                         row=0,
                          custom_id='my_tasks',
                          style=discord.ButtonStyle.primary)
 
     async def callback(self, interaction: discord.Interaction):
         user_name = interaction.user.name
-        # Замена всех спец. символов и пробелов на подчеркивания
         user_tag = ''.join(e if e.isalnum() else '_' for e in user_name)
         # Получение задачи с тегом, соответствующим user_tag
         tag_argument = "+{0}".format(user_tag)
@@ -260,7 +270,7 @@ class CompletedTasksButton(discord.ui.Button):
         super().__init__(label='Выполненные задачи',
                          row=1,
                          custom_id='completed_tasks',
-                         style=discord.ButtonStyle.primary)
+                         style=discord.ButtonStyle.secondary)
 
     async def callback(self, interaction: discord.Interaction):
         try:
@@ -278,15 +288,13 @@ class CompletedTasksButton(discord.ui.Button):
             await interaction.response.send_message(
                 'Произошла ошибка при получении списка выполненных задач. Похоже, список пуст.')
 
-# Добавить проект
+# Добавить в проект
 
-
-projects = ['Рабочий', 'Нерабочий', 'Домашний']
 
 class ProjectSelect(discord.ui.Select):
     def __init__(self, task_id):
         options = [discord.SelectOption(label=project) for project in projects]
-        options.append(discord.SelectOption(label='Добавить новый проект...'))
+        options.append(discord.SelectOption(label='Добавить новый проект'))
         super().__init__(placeholder='Выберите проект', options=options)
         self.task_id = task_id
 
@@ -302,7 +310,11 @@ class ProjectSelect(discord.ui.Select):
             message = await bot.wait_for('message', check=check)
             new_project = message.content
             projects.append(new_project)
+            # Сохранение нового проекта в файл
+            with open('config.json', 'w') as f:
+                json.dump({'users': users, 'projects': projects}, f, indent=4)
             await interaction.followup.send(f'Проект "{new_project}" добавлен.')
+            selected_option = new_project
         else:
             await interaction.response.send_message(f'Выбран проект "{selected_option}"')
         project_name = selected_option
@@ -317,10 +329,10 @@ class ProjectView(discord.ui.View):
 
 class AddProjectButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(label='Добавить проект',
-                         row=2,
+        super().__init__(label='Добавить в проект',
+                         row=0,
                          custom_id='add_project',
-                         style=discord.ButtonStyle.secondary)
+                         style=discord.ButtonStyle.primary)
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.send_message(
@@ -341,9 +353,9 @@ class AddProjectButton(discord.ui.Button):
 class AddTagButton(discord.ui.Button):
     def __init__(self):
         super().__init__(label='Добавить тег',
-                         row=2,
+                         row=0,
                          custom_id='add_tag',
-                         style=discord.ButtonStyle.secondary)
+                         style=discord.ButtonStyle.success)
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.send_message(
@@ -366,7 +378,7 @@ class AddTagButton(discord.ui.Button):
 class FilterByProjectButton(discord.ui.Button):
     def __init__(self):
         super().__init__(label='Фильтр по проекту',
-                         row=2,
+                         row=1,
                          custom_id='filter_by_project',
                          style=discord.ButtonStyle.secondary)
 
@@ -406,7 +418,7 @@ class FilterByProjectButton(discord.ui.Button):
 class FilterByTagButton(discord.ui.Button):
     def __init__(self):
         super().__init__(label='Фильтр по тегу',
-                         row=2,
+                         row=1,
                          custom_id='filter_by_tag',
                          style=discord.ButtonStyle.secondary)
 
@@ -445,7 +457,8 @@ class FilterByTagButton(discord.ui.Button):
 
 class RemoveTagFromTaskButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(label='Удалить тег из задачи', 
+        super().__init__(label='Удалить тег из задачи',
+                         row=0,
                          style=discord.ButtonStyle.secondary)
 
     async def callback(self, interaction: discord.Interaction):
@@ -461,40 +474,14 @@ class RemoveTagFromTaskButton(discord.ui.Button):
         subprocess.run(["task", task_id, "modify", "-"+tag])
         await interaction.followup.send(f'Тег {tag} удален из задачи {task_id}.')
 
-# Просмотр всех задач с определенным тегом
-
-
-class ViewTasksWithTagButton(discord.ui.Button):
-    def __init__(self):
-        super().__init__(label='Просмотреть задачи с тегом', 
-                         style=discord.ButtonStyle.secondary)
-
-    async def callback(self, interaction: discord.Interaction):
-        await interaction.response.send_message("Введите тег")
-
-        def check(m):
-            return (
-                m.author.id == interaction.user.id
-                and m.channel.id == interaction.channel.id
-            )
-        message = await bot.wait_for('message', check=check)
-        tag = message.content.strip()
-
-        try:
-            task_list = subprocess.check_output(["task", "list", "+{}".format(tag)], stderr=subprocess.STDOUT)
-            task_list = task_list.decode('utf-8')
-            task_list = f'```\n{task_list}\n```'
-            await interaction.followup.send(f'Задачи с тегом {tag}: \n{task_list}')
-        except subprocess.CalledProcessError:
-            await interaction.followup.send('Нет задач с этим тегом.')
-
  # Просмотр всех тегов в задаче
 
 
 class ViewTagsInTaskButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(label='Просмотреть теги в задаче', 
-                         style=discord.ButtonStyle.secondary)
+        super().__init__(label='Просмотреть теги в задаче',
+                         row=1,
+                         style=discord.ButtonStyle.primary)
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.send_message("Введите ID задачи")
@@ -525,12 +512,12 @@ class ViewTagsInTaskButton(discord.ui.Button):
 
 class ViewAllTagsButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(label='Просмотреть все теги', 
-                         style=discord.ButtonStyle.secondary)
+        super().__init__(label='Все теги проекта',
+                         row=1,
+                         style=discord.ButtonStyle.primary)
 
     async def callback(self, interaction: discord.Interaction):
         try:
-            # Получение списка всех задач
             task_list = subprocess.check_output(["task", "export"], stderr=subprocess.STDOUT)
             tasks = json.loads(task_list)
 
@@ -552,8 +539,8 @@ class ViewAllTagsButton(discord.ui.Button):
 
 class RenameTagButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(label='Переименовать тег',
-                         row=2,
+        super().__init__(label='Сменить тег задачи',
+                         row=0,
                          custom_id='rename_tag',
                          style=discord.ButtonStyle.secondary)
 
@@ -577,7 +564,7 @@ class RenameTagButton(discord.ui.Button):
 class DeleteTagButton(discord.ui.Button):
     def __init__(self):
         super().__init__(label='Удалить тег',
-                         row=2,
+                         row=0,
                          custom_id='delete_tag',
                          style=discord.ButtonStyle.danger)
 
@@ -595,9 +582,89 @@ class DeleteTagButton(discord.ui.Button):
         await interaction.followup.send(
             f'Тег {tag} удален из всех задач.')
 
+# Изменение приоритета задачи
+
+
+class ChangePriorityButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label="Назначить приоритет",
+                         row=0,
+                         style=discord.ButtonStyle.primary)
+
+    async def callback(self, interaction: discord.Interaction):
+        view = PriorityView()
+        await interaction.response.send_message("Выберите приоритет:", view=view)
+
+class PriorityButton(discord.ui.Button):
+    def __init__(self, label, priority):
+        super().__init__(label=label,
+                         row=0,
+                         custom_id=f'priority_{priority}',
+                         style=discord.ButtonStyle.primary)
+        self.task_id = None
+        self.priority = priority
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.send_message("Введите ID задачи")
+
+        def check(m):
+            return (
+                m.author.id == interaction.user.id
+                and m.channel.id == interaction.channel.id
+            )
+        message = await bot.wait_for('message', check=check)
+        self.task_id = message.content
+
+        subprocess.run(["task", self.task_id, "modify", f"priority:{self.priority}"])
+        await interaction.followup.send(
+            f'Приоритет задачи {self.task_id} изменен на {self.priority}.')
+        
+class PriorityView(discord.ui.View):
+    def __init__(self):
+        super().__init__()
+        self.add_item(PriorityButton("Низкий", "L"))
+        self.add_item(PriorityButton("Средний", "M"))
+        self.add_item(PriorityButton("Высокий", "H"))
+
+# Установка даты завершения задачи
+class ChangeDueDateButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label="Назначить дату завершения",
+                         row=0,
+                         style=discord.ButtonStyle.primary)
+        self.task_id = None
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.send_message("Введите ID задачи")
+
+        def check(m):
+            return (
+                m.author.id == interaction.user.id
+                and m.channel.id == interaction.channel.id
+            )
+        message = await bot.wait_for('message', check=check)
+        self.task_id = message.content
+
+        await interaction.followup.send("Введите новую дату завершения (в формате YYYY-MM-DD)")
+
+        message = await bot.wait_for('message', check=check)
+        new_due_date = message.content
+
+        subprocess.run(["task", self.task_id, "modify", f"due:{new_due_date}"])
+        await interaction.followup.send(f'Дата завершения задачи {self.task_id} изменена на {new_due_date}.')
+
 # Кнопка назад
 
-            
+class BackButton1(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label='Назад',
+                         row=2,
+                         custom_id='back_button1',
+                         style=discord.ButtonStyle.secondary)
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.edit_message(view=MainView())
+
 class BackButton(discord.ui.Button):
     def __init__(self):
         super().__init__(label='Назад',
@@ -608,29 +675,37 @@ class BackButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.edit_message(view=MainView())
 
+# Представление кнопок
+
+
+class WorkingView(discord.ui.View):
+    def __init__(self):
+        super().__init__()
+        self.add_item(MyTasksButton())
+        self.add_item(DoneTaskButton())
+        self.add_item(BackButton1())
 
 class BasicView(discord.ui.View):
     def __init__(self):
         super().__init__()
         self.add_item(CreateTaskButton())
-        self.add_item(DoneTaskButton())
         self.add_item(DeleteTasksButton())
-        self.add_item(ListTasksButton())
-        self.add_item(MyTasksButton())
-        self.add_item(CompletedTasksButton())
+        self.add_item(ChangePriorityButton())
+        self.add_item(ChangeDueDateButton())
         self.add_item(AddProjectButton())
-        self.add_item(AddTagButton())
+        self.add_item(ListTasksButton())
+        self.add_item(CompletedTasksButton())
         self.add_item(FilterByProjectButton())
         self.add_item(FilterByTagButton())
         self.add_item(BackButton())
 
-class TagManagerView(discord.ui.View):
+class TagManagementView(discord.ui.View):
     def __init__(self):
         super().__init__()
+        self.add_item(AddTagButton())
         self.add_item(RemoveTagFromTaskButton())
-        self.add_item(ViewTasksWithTagButton())
-        self.add_item(ViewTagsInTaskButton())
         self.add_item(ViewAllTagsButton())
+        self.add_item(ViewTagsInTaskButton())
         self.add_item(RenameTagButton())
         self.add_item(DeleteTagButton())
         self.add_item(BackButton())

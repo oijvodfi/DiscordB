@@ -5,6 +5,7 @@ import os
 from dotenv import load_dotenv
 import re
 import json
+from mailings import send_tasks_email
 
 load_dotenv()
 TOKEN = os.getenv('TOKEN')
@@ -29,6 +30,11 @@ projects = config['projects']
 async def on_ready():
     print("DiscoBot started | Looking tassty")
 
+@bot.command()
+async def mail(ctx):
+    send_tasks_email()
+    await ctx.send('Отчет отправлен на почту.')
+
 # ГЛАВНОЕ МЕНЮ
 
 
@@ -36,7 +42,7 @@ class MainView(discord.ui.View):
     def __init__(self):
         super().__init__()
 
-    @discord.ui.button(label='Working', style=discord.ButtonStyle.green)
+    @discord.ui.button(label='Задачи', style=discord.ButtonStyle.primary)
     async def working_menu_button(self,
                           interaction: discord.Interaction,
                           button: discord.ui.button):
@@ -44,7 +50,7 @@ class MainView(discord.ui.View):
             content="Выберите действие",
             view=WorkingView())
         
-    @discord.ui.button(label='Basic', style=discord.ButtonStyle.green)
+    @discord.ui.button(label='Расширенные возможности', style=discord.ButtonStyle.green)
     async def basic_menu_button(self,
                           interaction: discord.Interaction,
                           button: discord.ui.button):
@@ -52,7 +58,7 @@ class MainView(discord.ui.View):
             content="Выберите действие",
             view=BasicView())
         
-    @discord.ui.button(label='Tag-manager', style=discord.ButtonStyle.green)
+    @discord.ui.button(label='Тег-менеджер', style=discord.ButtonStyle.green)
     async def tag_management_menu_button(self,
                           interaction: discord.Interaction,
                           button: discord.ui.button):
@@ -430,7 +436,7 @@ class FilterByTagButton(discord.ui.Button):
             return
 
         await interaction.response.send_message(
-            "Введите интересующий тег")
+            "Введите интересующие теги, разделенные пробелами")
 
         def check(m):
             return (
@@ -438,19 +444,20 @@ class FilterByTagButton(discord.ui.Button):
                 and m.channel.id == interaction.channel.id
             )
         message = await bot.wait_for('message', check=check)
-        tag = message.content.strip()
+        tags = message.content.strip().split()
 
-        try:
-            task_list = subprocess.check_output(
-                ["task", "list", "+{}".format(tag)],
-                stderr=subprocess.STDOUT)
-            task_list = task_list.decode('utf-8')
-            task_list = f'```\n{task_list}\n```'
-            await interaction.followup.send(
-                f'Задачи с тегом {tag}: \n{task_list}')
-        except subprocess.CalledProcessError:
-            await interaction.followup.send(
-                'Нет задач с этим тегом.')
+        task_list = ''
+        for tag in tags:
+            try:
+                current_task_list = subprocess.check_output(
+                    ["task", "list", "+{}".format(tag)],
+                    stderr=subprocess.STDOUT)
+                current_task_list = current_task_list.decode('utf-8')
+                task_list += f'Задачи с тегом {tag}: \n```\n{current_task_list}\n```\n'
+            except subprocess.CalledProcessError:
+                task_list += f'Нет задач с тегом {tag}.\n'
+
+        await interaction.followup.send(task_list)
 
 # Удаление тега из задачи
 
@@ -713,7 +720,6 @@ class TagManagementView(discord.ui.View):
 @bot.command()
 async def hello(ctx):
     await ctx.send("Приветствую", view=MainView())
-
 
 @bot.command()
 async def task(ctx, *, task_command):

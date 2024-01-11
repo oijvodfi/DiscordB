@@ -35,6 +35,10 @@ async def mail(ctx):
     send_tasks_email()
     await ctx.send('Отчет отправлен на почту.')
 
+@bot.command()
+async def task(ctx):
+    await ctx.send("Приветствую", view=MainView())
+
 # ГЛАВНОЕ МЕНЮ
 
 
@@ -306,7 +310,7 @@ class ProjectSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         selected_option = self.values[0]
-        if selected_option == 'Добавить новый проект...':
+        if selected_option == 'Добавить новый проект':
             await interaction.response.send_message("Введите название нового проекта")
             def check(m):
                 return (
@@ -324,9 +328,11 @@ class ProjectSelect(discord.ui.Select):
         else:
             await interaction.response.send_message(f'Выбран проект "{selected_option}"')
         project_name = selected_option
-        subprocess.run(["task", self.task_id, "modify", "project:"+project_name])
-        await interaction.followup.send(
-            f'Задача {self.task_id} отправлена в проект {project_name}.')
+        
+        if project_name != 'Добавить новый проект':
+            subprocess.run(["task", self.task_id, "modify", "project:"+project_name])
+            await interaction.followup.send(
+                f'Задача {self.task_id} отправлена в проект {project_name}.')
 
 class ProjectView(discord.ui.View):
     def __init__(self, task_id):
@@ -716,36 +722,5 @@ class TagManagementView(discord.ui.View):
         self.add_item(RenameTagButton())
         self.add_item(DeleteTagButton())
         self.add_item(BackButton())
-
-@bot.command()
-async def hello(ctx):
-    await ctx.send("Приветствую", view=MainView())
-
-@bot.command()
-async def task(ctx, *, task_command):
-    """Execute a taskd command"""
-
-    # Check if the command is from the allowed channel
-    if ctx.guild and ctx.channel.id != ALLOWED_CHANNEL_ID:
-        await ctx.send("Sorry, you can't use this command here.")
-        return
-
-    try:
-        process = subprocess.Popen(["task", *task_command.split()],
-                                   stdin=subprocess.PIPE,
-                                   stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE,
-                                   text=True)
-
-        # Send 'yes' to stdin and collect the output
-        stdout, stderr = process.communicate(input="yes\n")
-
-        result = stdout or stderr
-
-        # Split the result into multiple messages if it's too long
-        for chunk in [result[i:i + 1900] for i in range(0, len(result), 1900)]:
-            await ctx.send(f"```\n{chunk}\n```")
-    except Exception as e:
-        await ctx.send(f"Error executing task: {e}")
-
+        
 bot.run(TOKEN)

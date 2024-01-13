@@ -36,7 +36,7 @@ async def mail(ctx):
     await ctx.send('Отчет отправлен на почту.')
 
 @bot.command()
-async def task(ctx):
+async def hello(ctx):
     await ctx.send("Приветствую", view=MainView())
 
 # ГЛАВНОЕ МЕНЮ
@@ -701,5 +701,49 @@ class TagManagementView(discord.ui.View):
         self.add_item(RenameTagButton())
         self.add_item(DeleteTagButton())
         self.add_item(BackButton())
+
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+
+    if message.content.startswith('!task '):
+        command = message.content[6:]  # Extract the command from the message
+        task_command = f"task {command}"
+
+        if command.startswith('delete '):
+            task_id = command.split()[1]
+            delete_command = f"task {task_id} delete"
+
+            try:
+                proc = subprocess.Popen(delete_command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+                output, error = proc.communicate(input=b"y\n")  # Simulate user input 'y' for confirmation
+
+                if proc.returncode == 0:
+                    await message.channel.send("Task deleted successfully.")
+                else:
+                    await message.channel.send(f"Error deleting task: {error.decode('utf-8')}")
+
+            except subprocess.CalledProcessError as e:
+                await message.channel.send(f"Error executing task command: {e.output.decode('utf-8')}")
+
+        elif command == 'list':
+            try:
+                task_list = subprocess.check_output(["task", "list"], stderr=subprocess.STDOUT)
+                task_list = task_list.decode('utf-8')
+                await message.channel.send(f"```\n{task_list}\n```")
+            
+            except subprocess.CalledProcessError as e:
+                await message.channel.send(f"Error retrieving task list: {e.output.decode('utf-8')}")
+
+        else:
+            result = subprocess.run(task_command, capture_output=True, text=True, shell=True)
+            if result.stdout:
+                await message.channel.send(result.stdout)
+            if result.stderr:
+                await message.channel.send(result.stderr)
+
+    else:
+        await bot.process_commands(message)
         
 bot.run(TOKEN)

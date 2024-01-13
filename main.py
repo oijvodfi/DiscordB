@@ -231,21 +231,13 @@ class ListTasksButton(discord.ui.Button):
                          style=discord.ButtonStyle.secondary)
 
     async def callback(self, interaction: discord.Interaction):
-        # Проверка на админа
-        if interaction.user.guild_permissions.administrator:
-            try:
                 task_list = subprocess.check_output(
                     ["task", "list"], stderr=subprocess.STDOUT)
                 task_list = task_list.decode('utf-8')
                 task_list = f'```\n{task_list}\n```'
                 await interaction.response.send_message(
                     f'Здесь все задачи: {task_list}')
-            except subprocess.CalledProcessError:
-                await interaction.response.send_message('Список задач пуст.')
-        else:
-            await interaction.response.send_message(
-                'Извините, но эта команда доступна только администраторам.')
-
+                
 # МОИ ЗАДАЧИ
 
 
@@ -259,7 +251,6 @@ class MyTasksButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         user_name = interaction.user.name
         user_tag = ''.join(e if e.isalnum() else '_' for e in user_name)
-        # Получение задачи с тегом, соответствующим user_tag
         tag_argument = "+{0}".format(user_tag)
         try:
             task_list = subprocess.check_output(
@@ -289,14 +280,14 @@ class CompletedTasksButton(discord.ui.Button):
             completed_tasks = completed_tasks.decode('utf-8')
             if completed_tasks.strip() == '':
                 await interaction.response.send_message(
-                    'У вас нет выполненных задач.')
+                    'К сожалению, ещё нет выполненных задач')
             else:
                 completed_tasks = f'```\n{completed_tasks}\n```'
                 await interaction.response.send_message(
-                    f'Ваши выполненные задачи: {completed_tasks}')
+                    f'Все выполненные задачи: {completed_tasks}')
         except subprocess.CalledProcessError:
             await interaction.response.send_message(
-                'Произошла ошибка при получении списка выполненных задач. Похоже, список пуст.')
+                'Произошла ошибка при получении списка выполненных задач. Похоже, список пуст')
 
 # Добавить в проект
 
@@ -395,12 +386,6 @@ class FilterByProjectButton(discord.ui.Button):
                          style=discord.ButtonStyle.secondary)
 
     async def callback(self, interaction: discord.Interaction):
-        # Проверка на админа
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message(
-                'Извините, но эта команда доступна только администраторам.')
-            return
-
         await interaction.response.send_message(
             "Введите интересующий проект")
 
@@ -435,12 +420,6 @@ class FilterByTagButton(discord.ui.Button):
                          style=discord.ButtonStyle.secondary)
 
     async def callback(self, interaction: discord.Interaction):
-        # Проверка на админа
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message(
-                'Извините, но эта команда доступна только администраторам.')
-            return
-
         await interaction.response.send_message(
             "Введите интересующие теги, разделенные пробелами")
 

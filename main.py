@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import re
 import json
 from mailings import send_tasks_email
+import datetime
 
 load_dotenv()
 TOKEN = os.getenv('TOKEN')
@@ -231,12 +232,19 @@ class ListTasksButton(discord.ui.Button):
                          style=discord.ButtonStyle.secondary)
 
     async def callback(self, interaction: discord.Interaction):
-                task_list = subprocess.check_output(
-                    ["task", "list"], stderr=subprocess.STDOUT)
-                task_list = task_list.decode('utf-8')
-                task_list = f'```\n{task_list}\n```'
-                await interaction.response.send_message(
-                    f'Здесь все задачи: {task_list}')
+        try:
+            task_list = subprocess.check_output(
+                ["task", "list"], stderr=subprocess.STDOUT)
+            task_list = task_list.decode('utf-8')
+            
+            # Split the task_list into multiple chunks if it's too long
+            chunks = [task_list[i:i + 1900] for i in range(0, len(task_list), 1900)]
+            
+            # Send each chunk as a separate message
+            for chunk in chunks:
+                await interaction.channel.send(f'```utf\n{chunk}\n```')
+        except Exception as e:
+            await interaction.response.send_message(f"Error listing tasks: {e}")
                 
 # МОИ ЗАДАЧИ
 
@@ -282,9 +290,9 @@ class CompletedTasksButton(discord.ui.Button):
                 await interaction.response.send_message(
                     'К сожалению, ещё нет выполненных задач')
             else:
-                completed_tasks = f'```\n{completed_tasks}\n```'
-                await interaction.response.send_message(
-                    f'Все выполненные задачи: {completed_tasks}')
+                chunks = [completed_tasks[i:i + 1900] for i in range(0, len(completed_tasks), 1900)]
+                for chunk in chunks:
+                    await interaction.channel.send(f'```\n{chunk}\n```')
         except subprocess.CalledProcessError:
             await interaction.response.send_message(
                 'Произошла ошибка при получении списка выполненных задач. Похоже, список пуст')
@@ -597,7 +605,7 @@ class PriorityButton(discord.ui.Button):
         self.priority = priority
 
     async def callback(self, interaction: discord.Interaction):
-        await interaction.response.send_message("Введите ID задачи")
+        await interaction.response.send_message("Введите ID задачи (неск. - через пробел)")
 
         def check(m):
             return (
@@ -619,6 +627,8 @@ class PriorityView(discord.ui.View):
         self.add_item(PriorityButton("Высокий", "H"))
 
 # Установка даты завершения задачи
+        
+        
 class ChangeDueDateButton(discord.ui.Button):
     def __init__(self):
         super().__init__(label="Назначить дату завершения",
@@ -637,13 +647,18 @@ class ChangeDueDateButton(discord.ui.Button):
         message = await bot.wait_for('message', check=check)
         self.task_id = message.content
 
-        await interaction.followup.send("Введите новую дату завершения (в формате YYYY-MM-DD)")
+        await interaction.followup.send("Введите новую дату завершения (в формате DD-MM-YYYY)")
 
         message = await bot.wait_for('message', check=check)
         new_due_date = message.content
 
-        subprocess.run(["task", self.task_id, "modify", f"due:{new_due_date}"])
-        await interaction.followup.send(f'Дата завершения задачи {self.task_id} изменена на {new_due_date}.')
+        try:
+            parsed_date = datetime.datetime.strptime(new_due_date, '%d-%m-%Y')
+            formatted_date = parsed_date.strftime('%Y-%m-%d')
+            subprocess.run(["task", self.task_id, "modify", f"due:{formatted_date}"])
+            await interaction.followup.send(f'Дата завершения задачи {self.task_id} изменена на {new_due_date}.')
+        except ValueError:
+            await interaction.followup.send("Неверный формат даты. Введите дату в формате DD-MM-YYYY.")
 
 # Кнопка назад
 
@@ -708,7 +723,7 @@ async def on_message(message):
         return
 
     if message.content.startswith('!task '):
-        command = message.content[6:]  # Extract the command from the message
+        command = message.content[6:]
         task_command = f"task {command}"
 
         if command.startswith('delete '):
@@ -717,24 +732,26 @@ async def on_message(message):
 
             try:
                 proc = subprocess.Popen(delete_command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-                output, error = proc.communicate(input=b"y\n")  # Simulate user input 'y' for confirmation
+                output, error = proc.communicate(input=b"y\n")
 
                 if proc.returncode == 0:
-                    await message.channel.send("Task deleted successfully.")
+                    await message.channel.send("Задача успешно удалена.")
                 else:
-                    await message.channel.send(f"Error deleting task: {error.decode('utf-8')}")
+                    await message.channel.send(f"Ошибка при удалении задачи: {error.decode('utf-8')}")
 
             except subprocess.CalledProcessError as e:
-                await message.channel.send(f"Error executing task command: {e.output.decode('utf-8')}")
+                await message.channel.send(f"Ошибка при выполнении команды: {e.output.decode('utf-8')}")
 
         elif command == 'list':
             try:
                 task_list = subprocess.check_output(["task", "list"], stderr=subprocess.STDOUT)
                 task_list = task_list.decode('utf-8')
-                await message.channel.send(f"```\n{task_list}\n```")
+                chunks = [task_list[i:i + 1500] for i in range(0, len(task_list), 1500)]
+                for chunk in chunks:
+                    await message.channel.send(f"```\n{chunk}\n```")
             
             except subprocess.CalledProcessError as e:
-                await message.channel.send(f"Error retrieving task list: {e.output.decode('utf-8')}")
+                await message.channel.send(f"Ошибка при отправке списка задач: {e.output.decode('utf-8')}")
 
         else:
             result = subprocess.run(task_command, capture_output=True, text=True, shell=True)
@@ -745,5 +762,5 @@ async def on_message(message):
 
     else:
         await bot.process_commands(message)
-        
+
 bot.run(TOKEN)

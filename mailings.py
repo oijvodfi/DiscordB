@@ -7,24 +7,18 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Настройка SMTP-сервера
 smtp_server = "smtp.gmail.com"
 smtp_port = 587
 smtp_username = os.getenv('smtp_username')
 smtp_password = os.getenv('smtp_password')
 
 def send_tasks_email():
-    # Создание сообщения
     msg = MIMEMultipart()
     msg['From'] = smtp_username
     msg['To'] = ""
     msg['Subject'] = "List All ur Taag"
-
-    # Получение списка задач
     task_list = subprocess.check_output(["task", "+sm1lebroofficial", "list"], stderr=subprocess.STDOUT)
     task_list = task_list.decode('utf-8')
-
-    # Добавление списка задач в сообщение
     msg.attach(MIMEText(task_list, 'plain'))
 
     # Отправка сообщения

@@ -3,10 +3,12 @@ version: '3.8'
 services:
   bot:
     build: .
+    image: cr.yandex/crpmns6d79n0i3fhib9e/tasky:0.0.5
+    platform: linux/amd64
     volumes:
       - task_data:/root/.task
-    environment:
-      - DISCORD_TOKEN=${DISCORD_TOKEN}
+    env_file:
+      - .env
 
 volumes:
   task_data:

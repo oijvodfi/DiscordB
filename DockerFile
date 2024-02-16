@@ -4,6 +4,8 @@ WORKDIR /app
 
 COPY . /app
 
+RUN apt update && apt install taskwarrior && apt clean
+
 RUN pip install -r requirements.txt
 
 CMD ["python", "main.py"]

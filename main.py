@@ -92,17 +92,15 @@ class ConfirmView(discord.ui.View):
 # СОЗДАТЬ ЗАДАЧУ
 
 
-class CreateTaskButton(discord.ui.Button):
+class EnhancedCreateTaskButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(label='Создать задачу',
-                         row=0,
-                         custom_id='create_task',
-                         style=discord.ButtonStyle.success)
+        super().__init__(label='Создать задачу', style=discord.ButtonStyle.success)
         self.task_description = None
+        self.user_tag = None
+        self.project_name = None
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.send_message("Введите название для задачи")
-
         def check(m):
             return (
                 m.author.id == interaction.user.id
@@ -111,20 +109,70 @@ class CreateTaskButton(discord.ui.Button):
         message = await bot.wait_for('message', check=check)
         self.task_description = message.content
 
+        # Запрос пользователя для назначения задачи
         view = ConfirmView()
-        await interaction.followup.send(
-            'Хотите ли вы назначить эту задачу '
-            'определенному пользователю?', view=view)
+        await interaction.followup.send("Хотите ли вы назначить эту задачу определенному пользователю?", view=view)
         await view.wait()
-
         if view.value:
-            await interaction.followup.send("Выберите пользователя, которому хотите назначить задачу", view=SelectUserView(users, self))
-        else:
-            subprocess.run(["task", "add", self.task_description])
-            await interaction.followup.send(
-                f'Задача "{self.task_description}" создана.')
+            user_selection_view = TaskSelectUserView(users, self)
+            await interaction.followup.send("Выберите пользователя, которому хотите назначить задачу", view=user_selection_view)
+            await user_selection_view.wait()
 
-class UserSelect(discord.ui.Select):
+        # Запрос проекта для задачи
+        view = ConfirmView()    
+        await interaction.followup.send("Хотите ли вы добавить задачу в проект?", view=view)
+        await view.wait()
+        if view.value:
+            project_selection_view = TaskSelectProjectView(projects, self)
+            await interaction.followup.send("Выберите проект для задачи", view=project_selection_view)
+            await project_selection_view.wait()
+
+        # Запрос даты завершения задачи
+        view = ConfirmView()
+        await interaction.followup.send("Хотите ли вы назначить дату завершения задачи?", view=view)
+        await view.wait()
+        due_date = None
+        if view.value:
+            await interaction.followup.send("Введите дату завершения задачи (в формате DD-MM-YYYY)")
+            due_date_response = await self.wait_for_response(interaction)
+            parsed_date = datetime.datetime.strptime(due_date_response, '%d-%m-%Y')
+            due_date = parsed_date.strftime('%Y-%m-%d')
+
+        task_command = ["task", "add", self.task_description]
+        if self.user_tag:
+            task_command.append(f"+{self.user_tag}")
+        if self.project_name:
+            task_command.append(f"project:{self.project_name}")
+        if due_date:
+
+            task_command.append(f"due:{due_date}")
+        process = subprocess.run(task_command, capture_output=True, text=True)
+        output = process.stdout
+        task_id = output.split()[-1].rstrip('.')
+
+
+        await interaction.followup.send(
+    f'**Задача {task_id}** "{self.task_description}" \n'
+    f'**Назначена пользователю -** {self.user_tag if self.user_tag else "не указано"}. \n'
+    f'**Добавлена в проект -** {self.project_name if self.project_name else "не указано"}.\n'
+    f'**Дата завершения -** {due_date if due_date else "не указана"}.\n'
+)
+
+    async def wait_for_response(self, interaction):
+        def check(m):
+            return m.author.id == interaction.user.id and m.channel.id == interaction.channel.id
+
+        message = await bot.wait_for('message', check=check)
+        return message.content
+
+    async def wait_for_confirmation(self, interaction):
+        def check(m):
+            return m.author.id == interaction.user.id and m.channel.id == interaction.channel.id and m.content.lower() in ['да', 'нет']
+
+        message = await bot.wait_for('message', check=check)
+        return message.content.lower() == 'да'
+    
+class TaskUserSelect(discord.ui.Select):
     def __init__(self, users, button):
         options = [
             discord.SelectOption(label=user['name'], value=user['id'])
@@ -135,21 +183,56 @@ class UserSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         user_id = self.values[0]
-        # Находим пользователя по его ID
         user = next((user for user in users if user['id'] == user_id), None)
         if user is None:
             await interaction.response.send_message('Пользователь не найден.')
-            return
-        # Замена всех спец. символов и пробелов на подчеркивания
+        else:
+            await interaction.response.send_message(f'Выбран пользователь')
         user_tag = ''.join(e if e.isalnum() else '_' for e in user['tag'])
-        subprocess.run(["task", "add", self.button.task_description, f"+{user_tag}"])
-        await interaction.response.send_message(
-            f'Задача "{self.button.task_description}" создана и назначена пользователю {user["name"]}.')
+        self.button.user_tag = user_tag
+        self.view.stop()
+    
+class TaskProjectSelect(discord.ui.Select):
+    def __init__(self, projects, button):
+        options = [
+            discord.SelectOption(label=project, value=project)
+            for project in projects
+        ]
+        options.append(discord.SelectOption(label='Добавить новый проект'))
+        super().__init__(placeholder='Выберите проект', options=options)
+        self.button = button
 
-class SelectUserView(discord.ui.View):
+    async def callback(self, interaction: discord.Interaction):
+        selected_option = self.values[0]
+        if selected_option == 'Добавить новый проект':
+            await interaction.response.send_message("Введите название нового проекта")
+            def check(m):
+                return (
+                    m.author.id == interaction.user.id
+                    and m.channel.id == interaction.channel.id
+                )
+            message = await bot.wait_for('message', check=check)
+            new_project = message.content
+            projects.append(new_project)
+            with open('config.json', 'w') as f:
+                json.dump({'users': users, 'projects': projects}, f, indent=4)
+            await interaction.followup.send(f'Проект "{new_project}" добавлен.')
+            selected_option = new_project
+        else:
+            await interaction.response.send_message(f'Выбран проект')
+            project_name = selected_option
+        self.button.project_name = project_name
+        self.view.stop()
+
+class TaskSelectUserView(discord.ui.View):
     def __init__(self, users, button):
         super().__init__()
-        self.add_item(UserSelect(users, button))
+        self.add_item(TaskUserSelect(users, button))
+
+class TaskSelectProjectView(discord.ui.View):
+    def __init__(self, projects, button):
+        super().__init__()
+        self.add_item(TaskProjectSelect(projects, button))
                     
 # ЗАВЕРШИТЬ ЗАДАЧУ
 
@@ -244,7 +327,7 @@ class ListTasksButton(discord.ui.Button):
             for chunk in chunks:
                 await interaction.channel.send(f'```utf\n{chunk}\n```')
         except Exception as e:
-            await interaction.response.send_message(f"Error listing tasks: {e}")
+            await interaction.response.send_message(f"На данный момент задач нет")
                 
 # МОИ ЗАДАЧИ
 
@@ -695,7 +778,7 @@ class WorkingView(discord.ui.View):
 class BasicView(discord.ui.View):
     def __init__(self):
         super().__init__()
-        self.add_item(CreateTaskButton())
+        self.add_item(EnhancedCreateTaskButton())
         self.add_item(DeleteTasksButton())
         self.add_item(ChangePriorityButton())
         self.add_item(ChangeDueDateButton())
